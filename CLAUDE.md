@@ -69,8 +69,8 @@ Build and run behaviour will be per sub project - this project is for humans and
 
 ## Code Style
 
-- Always ensure text files have a trailing newline.
-- With the exception of CLAUDE.md, all markdown docs should be NamedLikeThis.md.
+- Always ensure text files have a trailing newline
+- With the exception of README.md and CLAUDE.md, all markdown docs should be NamedLikeThis.md
 
 
 ## Architecture
