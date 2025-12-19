@@ -70,6 +70,7 @@ Build and run behaviour will be per sub project - this project is for humans and
 ## Code Style
 
 - Always ensure text files have a trailing newline
+- Repos are always named in the style group-name group-name-morename group-name-morename-evenmore etc
 - With the exception of README.md and CLAUDE.md, all markdown docs should be NamedLikeThis.md
 
 
@@ -87,9 +88,15 @@ Build and run behaviour will be per sub project - this project is for humans and
 
 Only common tools such as:
 
-* Bash - shell runtime
+* Bash 3.2 up - shell runtime for branchout
+* Branchout - bulk repo management and documentation
 * Git - source control operations
-* Docker - packaging OCI images
+* Docker - packaging OCI images, running containers for testing and builds
+
+And inside containers others like:
+
+* Bash 4.X - shell runtime for scripts
+* kubectl - all kube API operations
 * BATS - testing scripts
 * Shellcheck - linting scripts
 * yq 4 - manipulating YAML documents
