@@ -4,5 +4,8 @@
 # Don't ignore github configuration files
 !.github/*
 
+# Don't ignore per-group README files
+!*/README.md
+
 # Personal settings ignored
 .claude
