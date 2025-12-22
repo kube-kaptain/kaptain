@@ -11,6 +11,6 @@ on:
 
 jobs:
   basic-quality:
-    uses: kube-kaptain/buildon-github-actions/.github/workflows/basic-quality-checks.yaml@1.0.0
+    uses: kube-kaptain/buildon-github-actions/.github/workflows/basic-quality-checks.yaml@1.0.1
     with:
       block-slashes: true
