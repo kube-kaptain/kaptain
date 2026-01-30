@@ -1,0 +1,402 @@
+#!/usr/bin/env bash
+# SPDX-License-Identifier: MIT
+# Copyright (c) 2025-2026 Kaptain contributors (Fred Cooke)
+#
+# Upgrades Kaptain Deploy Scripts version across all deploy images.
+# Creates PRs for main (1.35), main-1.32, main-1.33, and main-1.34 branches.
+#
+# Usage: upgrade-deploy-scripts-version [new-version]
+#   If new-version not supplied, increments patch version by 1.
+#
+# Idempotent: safe to re-run with explicit version after partial failure.
+# Continues on errors and reports failures at end.
+set -uo pipefail
+
+IMAGE_BASE_DIR="${HOME}/projects/kaptain/image"
+DEPLOY_IMAGE_DIRS=(
+  "image-environment-deploy-alpine-3-23"
+  "image-environment-deploy-trixie-slim"
+  "image-environment-deploy-ubi-9-minimal"
+  "image-environment-deploy-ubuntu-24-04-lts"
+)
+KUBECTL_VERSIONS=("1.32" "1.33" "1.34" "1.35")
+DOCKERFILE_PATH="src/docker/Dockerfile"
+BUILD_WORKFLOW_PATH=".github/workflows/build.yaml"
+
+NEW_VERSION="${1:-}"
+
+# Track results for summary
+declare -a CREATED_PRS=()
+declare -a FAILURES=()
+
+log() {
+  echo "==> $*"
+}
+
+warn() {
+  echo "WARNING: $*" >&2
+}
+
+record_failure() {
+  local context="$1"
+  local message="$2"
+  FAILURES+=("${context}: ${message}")
+  warn "${context}: ${message}"
+}
+
+get_current_version() {
+  local dockerfile="$1"
+  # Extract version from: FROM .../kaptain-deploy-scripts:X.Y.Z
+  grep -E 'kaptain-deploy-scripts:[0-9]+\.[0-9]+\.[0-9]+' "$dockerfile" \
+    | sed -E 's/.*kaptain-deploy-scripts:([0-9]+\.[0-9]+\.[0-9]+).*/\1/' \
+    | head -1
+}
+
+increment_patch_version() {
+  local version="$1"
+  local major minor patch
+  IFS='.' read -r major minor patch <<< "$version"
+  echo "${major}.${minor}.$((patch + 1))"
+}
+
+# Find a tag containing the kubectl version (e.g., "1.32" matches "1.0.1.1.32.1")
+find_tag_for_kubectl_version() {
+  local kube_version="$1"
+  git tag --list "*${kube_version}*" | head -1
+}
+
+update_dockerfile_version() {
+  local dockerfile="$1"
+  local old_version="$2"
+  local new_version="$3"
+  sed -i.bak "s/kaptain-deploy-scripts:${old_version}/kaptain-deploy-scripts:${new_version}/g" "$dockerfile"
+  rm -f "${dockerfile}.bak"
+}
+
+ensure_clean_state() {
+  local repo_dir="$1"
+  cd "$repo_dir"
+
+  # Stash any modified files BEFORE checkout to avoid losing work
+  if ! git diff --quiet || ! git diff --cached --quiet; then
+    log "Stashing uncommitted changes"
+    git stash save "unfinished work auto stashed"
+  fi
+
+  # Checkout main
+  git checkout main
+
+  # Fetch and fast-forward
+  git fetch origin
+  git ff origin/main
+
+  # Verify clean state
+  if ! git diff --quiet || ! git diff --cached --quiet; then
+    return 1
+  fi
+  return 0
+}
+
+# Fix branch specs to use main* pattern (so branches inherit correct config)
+fix_branch_specs() {
+  local workflow_file="$BUILD_WORKFLOW_PATH"
+  local needs_commit=false
+
+  if [[ ! -f "$workflow_file" ]]; then
+    log "Warning: $workflow_file not found"
+    return 0
+  fi
+
+  # Check for "- main" format (YAML list style)
+  if grep -q '^\s*-\s*main\s*$' "$workflow_file"; then
+    log "Fixing build.yaml branch specs: - main -> ['main*']"
+    sed -i.bak "s/^\(\s*-\s*\)main\s*$/\1['main*']/" "$workflow_file"
+    rm -f "${workflow_file}.bak"
+    needs_commit=true
+  fi
+
+  # Check for "[main]" format (inline array style)
+  if grep -q '\[main\]' "$workflow_file"; then
+    log "Fixing build.yaml branch specs: [main] -> ['main*']"
+    sed -i.bak "s/\[main\]/['main*']/g" "$workflow_file"
+    rm -f "${workflow_file}.bak"
+    needs_commit=true
+  fi
+
+  if [[ "$needs_commit" == "true" ]] && ! git diff --quiet "$workflow_file"; then
+    git add "$workflow_file"
+    git commit -m "Ensure this branch builds as a release."
+  fi
+}
+
+# Ensure build.yaml has additional-release-branches input (for non-main branches)
+ensure_release_branch_config() {
+  local workflow_file="$BUILD_WORKFLOW_PATH"
+  local current_branch
+  current_branch=$(git rev-parse --abbrev-ref HEAD)
+
+  if [[ ! -f "$workflow_file" ]]; then
+    log "Warning: $workflow_file not found"
+    return 0
+  fi
+
+  # First ensure branch specs are correct
+  fix_branch_specs
+
+  # Check if additional-release-branches input exists
+  if ! grep -q 'additional-release-branches' "$workflow_file"; then
+    log "Adding additional-release-branches: ${current_branch}"
+    # Add at end of file with blank line above
+    printf '\n      additional-release-branches: "%s"\n' "${current_branch}" >> "$workflow_file"
+
+    if ! git diff --quiet "$workflow_file"; then
+      git add "$workflow_file"
+      git commit -m "Ensure this branch builds as a release."
+    fi
+  fi
+}
+
+# Check if a commit with exact message exists on current branch
+commit_exists_on_branch() {
+  local message="$1"
+  git log --oneline --grep="^${message}$" -1 | grep -q .
+}
+
+process_repo() {
+  local repo_name="$1"
+  local repo_dir="${IMAGE_BASE_DIR}/${repo_name}"
+
+  if [[ ! -d "$repo_dir" ]]; then
+    log "Skipping $repo_name - directory not found"
+    return 0
+  fi
+
+  log "Processing $repo_name"
+  cd "$repo_dir"
+
+  # Ensure clean state on main
+  if ! ensure_clean_state "$repo_dir"; then
+    record_failure "$repo_name" "Repository not clean after stash and merge"
+    return 1
+  fi
+
+  # Ensure main has main* branch specs (so branches created from it inherit correct config)
+  fix_branch_specs
+
+  # Get current version and determine new version
+  local current_version
+  current_version=$(get_current_version "$DOCKERFILE_PATH")
+  if [[ -z "$current_version" ]]; then
+    record_failure "$repo_name" "Could not find kaptain-deploy-scripts version in $DOCKERFILE_PATH"
+    return 1
+  fi
+
+  local target_version
+  if [[ -n "$NEW_VERSION" ]]; then
+    target_version="$NEW_VERSION"
+  else
+    target_version=$(increment_patch_version "$current_version")
+  fi
+
+  local commit_message="Upgrade to Kaptain Deploy Scripts ${target_version} - see that project for changes included."
+  local main_commit
+
+  # Check if upgrade already done on main
+  if [[ "$current_version" == "$target_version" ]]; then
+    log "Version already at $target_version on main"
+    # Find the existing commit
+    main_commit=$(git log --oneline --grep="Upgrade to Kaptain Deploy Scripts ${target_version}" -1 --format="%H")
+    if [[ -z "$main_commit" ]]; then
+      # Version matches but no commit found - use HEAD
+      main_commit=$(git rev-parse HEAD)
+    fi
+  else
+    log "Upgrading $current_version -> $target_version"
+
+    # Update Dockerfile
+    update_dockerfile_version "$DOCKERFILE_PATH" "$current_version" "$target_version"
+
+    # Commit the change only if there are changes
+    if ! git diff --quiet "$DOCKERFILE_PATH"; then
+      git add "$DOCKERFILE_PATH"
+      git commit -m "$commit_message"
+    else
+      log "No changes to Dockerfile"
+    fi
+
+    main_commit=$(git rev-parse HEAD)
+  fi
+
+  # Process kubectl version branches
+  for kube_version in "${KUBECTL_VERSIONS[@]}"; do
+    local branch_name
+    local push_branch
+    local base_branch
+
+    if [[ "$kube_version" == "1.35" ]]; then
+      # main targets 1.35
+      branch_name="main"
+      push_branch="upgrade-1.35-to-deploy-scripts-${target_version}"
+      base_branch="main"
+    else
+      branch_name="main-${kube_version}"
+      push_branch="upgrade-${kube_version}-to-deploy-scripts-${target_version}"
+      base_branch="main-${kube_version}"
+
+      # Fetch to get latest remote state
+      git fetch origin
+
+      if git show-ref --verify --quiet "refs/remotes/origin/${branch_name}"; then
+        # Remote branch exists
+        if git show-ref --verify --quiet "refs/heads/${branch_name}"; then
+          # Local branch exists - checkout and fast-forward to remote
+          git checkout "$branch_name"
+          if ! git ff "origin/${branch_name}"; then
+            record_failure "$repo_name/$branch_name" "Could not fast-forward to origin/${branch_name}"
+            git checkout main
+            continue
+          fi
+        else
+          # Local branch doesn't exist - create tracking branch from remote
+          git checkout -b "$branch_name" "origin/${branch_name}"
+        fi
+
+        # Ensure release branch config
+        ensure_release_branch_config
+
+        # Check if upgrade already done on this branch
+        local branch_version
+        branch_version=$(get_current_version "$DOCKERFILE_PATH")
+        if [[ "$branch_version" == "$target_version" ]]; then
+          log "Version already at $target_version on $branch_name"
+        else
+          # Make the change directly on this branch
+          log "Upgrading $branch_version -> $target_version on $branch_name"
+          update_dockerfile_version "$DOCKERFILE_PATH" "$branch_version" "$target_version"
+          git add "$DOCKERFILE_PATH"
+          git commit -m "$commit_message"
+        fi
+      else
+        # Remote branch doesn't exist - create local, apply changes, push directly (no PR)
+        log "Remote branch ${branch_name} doesn't exist - creating and pushing directly"
+        if git show-ref --verify --quiet "refs/heads/${branch_name}"; then
+          git checkout "$branch_name"
+        else
+          # Find a tag with this kubectl version to branch from
+          local source_tag
+          source_tag=$(find_tag_for_kubectl_version "$kube_version")
+          if [[ -n "$source_tag" ]]; then
+            log "Creating ${branch_name} from tag ${source_tag}"
+            git checkout -b "$branch_name" "$source_tag"
+          else
+            record_failure "$repo_name/$branch_name" "No tag found containing ${kube_version}"
+            continue
+          fi
+        fi
+
+        # Ensure release branch config
+        ensure_release_branch_config
+
+        # Make the change directly on this branch
+        local branch_version
+        branch_version=$(get_current_version "$DOCKERFILE_PATH")
+        if [[ "$branch_version" != "$target_version" ]]; then
+          log "Upgrading $branch_version -> $target_version on $branch_name"
+          update_dockerfile_version "$DOCKERFILE_PATH" "$branch_version" "$target_version"
+          git add "$DOCKERFILE_PATH"
+          git commit -m "$commit_message"
+        fi
+
+        # Push directly to remote branch (no PR)
+        if ! git push origin "${branch_name}:${branch_name}"; then
+          record_failure "$repo_name/$branch_name" "Failed to push to remote branch ${branch_name}"
+        else
+          log "Created remote branch ${branch_name}"
+        fi
+        git checkout main
+        continue
+      fi
+    fi
+
+    # Check if there's anything to push (any commits ahead of remote base)
+    local commits_ahead
+    commits_ahead=$(git rev-list --count "origin/${base_branch}..HEAD" 2>/dev/null || echo "0")
+    if [[ "$commits_ahead" == "0" ]]; then
+      log "No changes to push for $branch_name - skipping PR"
+      git checkout main
+      continue
+    fi
+
+    # Push to unique remote branch
+    log "Pushing ${branch_name} -> origin/${push_branch}"
+    if ! git push origin "${branch_name}:${push_branch}"; then
+      record_failure "$repo_name/$branch_name" "Push failed"
+      git checkout main
+      continue
+    fi
+
+    # Create PR
+    log "Creating PR for ${push_branch}"
+    local pr_url
+    pr_url=$(gh pr create \
+      --title "$commit_message" \
+      --body "" \
+      --base "$base_branch" \
+      --head "$push_branch" \
+      2>&1) || {
+        # PR might already exist
+        if [[ "$pr_url" == *"already exists"* ]]; then
+          log "PR already exists for ${push_branch}"
+        else
+          record_failure "$repo_name/$branch_name" "PR creation failed: $pr_url"
+        fi
+        pr_url=""
+      }
+
+    if [[ -n "$pr_url" && "$pr_url" == http* ]]; then
+      CREATED_PRS+=("$pr_url")
+
+      # Enable auto-merge
+      log "Enabling auto-merge for PR"
+      gh pr merge "$pr_url" --auto --merge --delete-branch || log "Could not enable auto-merge (may need repo settings)"
+    fi
+
+    # Return to main for next iteration
+    git checkout main
+  done
+}
+
+main() {
+  log "Starting deploy scripts upgrade"
+
+  if [[ ! -d "$IMAGE_BASE_DIR" ]]; then
+    echo "ERROR: Image base directory not found: $IMAGE_BASE_DIR" >&2
+    exit 1
+  fi
+
+  for repo in "${DEPLOY_IMAGE_DIRS[@]}"; do
+    process_repo "$repo" || true
+  done
+
+  echo ""
+  log "Upgrade complete!"
+
+  if [[ ${#CREATED_PRS[@]} -gt 0 ]]; then
+    echo ""
+    echo "Created PRs:"
+    for pr in "${CREATED_PRS[@]}"; do
+      echo "  $pr"
+    done
+  fi
+
+  if [[ ${#FAILURES[@]} -gt 0 ]]; then
+    echo ""
+    echo "FAILURES requiring manual attention:"
+    for failure in "${FAILURES[@]}"; do
+      echo "  - $failure"
+    done
+    exit 1
+  fi
+}
+
+main "$@"
