@@ -356,9 +356,17 @@ process_repo() {
     if [[ -n "$pr_url" && "$pr_url" == http* ]]; then
       CREATED_PRS+=("$pr_url")
 
-      # Enable auto-merge
+      # Enable auto-merge for when checks are still pending
       log "Enabling auto-merge for PR"
       gh pr merge "$pr_url" --auto --merge --delete-branch || log "Could not enable auto-merge (may need repo settings)"
+
+      # If checks already passed, merge immediately
+      local check_status
+      check_status=$(gh pr checks "$pr_url" --json state --jq 'all(.state == "SUCCESS")' 2>/dev/null || echo "false")
+      if [[ "$check_status" == "true" ]]; then
+        log "Checks already passed - merging immediately"
+        gh pr merge "$pr_url" --merge --delete-branch || log "Could not merge (may already be merged)"
+      fi
     fi
 
     # Return to main for next iteration
