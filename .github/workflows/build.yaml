@@ -1,7 +1,4 @@
-# SPDX-License-Identifier: MIT
-# Copyright (c) 2025 Kaptain contributors (Fred Cooke)
-
-name: Build
+name: Basic QC
 
 on:
   push:
@@ -11,6 +8,7 @@ on:
 
 jobs:
   basic-quality:
-    uses: kube-kaptain/buildon-github-actions/.github/workflows/basic-quality-checks.yaml@1.0.1
+    uses: kube-kaptain/buildon-github-actions/.github/workflows/basic-quality-checks.yaml@1.0.60
     with:
-      block-slashes: true
+      qc-block-slash-containing-branches: true
+      qc-block-conventional-commits: true
