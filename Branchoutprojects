@@ -1,5 +1,6 @@
 aws-cli-v2-index
 buildon-github-actions
+homebrew-kaptain
 image-environment-base-alpine-3-23
 image-environment-base-trixie-slim
 image-environment-base-ubi-9-minimal
@@ -11,6 +12,7 @@ image-environment-deploy-ubuntu-24-04-lts
 image-pause
 kaptain-build-scripts
 kaptain-deploy-scripts
+kaptain-user-scripts
 show-sausage-making
 spec-build-scripts-api
 spec-scripts-api-schema
