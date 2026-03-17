@@ -1,6 +1,8 @@
 aws-cli-v2-index
+aws-eks-cluster-management
 buildon-github-actions
 homebrew-kaptain
+image-busybox-httpd
 image-environment-base-alpine-3-23
 image-environment-base-trixie-slim
 image-environment-base-ubi-9-minimal
@@ -12,7 +14,12 @@ image-environment-deploy-ubuntu-24-04-lts
 image-pause
 kaptain-build-scripts
 kaptain-deploy-scripts
+kaptain-marketplace
+kaptain-shared-scripts
+kaptain-skills
+kaptain-status
 kaptain-user-scripts
 show-sausage-making
 spec-build-scripts-api
 spec-scripts-api-schema
+test-aws-eks-cluster-management-gh-actions-build
