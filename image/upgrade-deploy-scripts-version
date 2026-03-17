@@ -2,13 +2,14 @@
 # SPDX-License-Identifier: MIT
 # Copyright (c) 2025-2026 Kaptain contributors (Fred Cooke)
 #
-# Upgrades Kaptain Deploy Scripts version across all deploy images.
+# Upgrades Kaptain Deploy Scripts and build tooling versions across all deploy images.
 # Creates PRs for main (1.35), main-1.32, main-1.33, and main-1.34 branches.
 #
-# Usage: upgrade-deploy-scripts-version [new-version]
-#   If new-version not supplied, increments patch version by 1.
+# Usage: upgrade-deploy-scripts-version [deploy-scripts-version]
+#   If deploy-scripts-version not supplied, uses latest tag from remote.
+#   Build tooling version is always resolved from remote.
 #
-# Idempotent: safe to re-run with explicit version after partial failure.
+# Idempotent: safe to re-run after partial failure.
 # Continues on errors and reports failures at end.
 set -uo pipefail
 
@@ -22,6 +23,8 @@ DEPLOY_IMAGE_DIRS=(
 KUBECTL_VERSIONS=("1.32" "1.33" "1.34" "1.35")
 DOCKERFILE_PATH="src/docker/Dockerfile"
 BUILD_WORKFLOW_PATH=".github/workflows/build.yaml"
+GITHUB_REMOTE_BASE="https://github.com/kube-kaptain"
+BUILDON_COMMIT_MESSAGE="Upgrade to latest build tooling."
 
 NEW_VERSION="${1:-}"
 
@@ -44,19 +47,20 @@ record_failure() {
   warn "${context}: ${message}"
 }
 
+get_latest_remote_tag() {
+  local repo="$1"
+  git ls-remote --tags --refs "${GITHUB_REMOTE_BASE}/${repo}.git" \
+    | sed 's|.*/||' \
+    | sort -V \
+    | tail -1
+}
+
 get_current_version() {
   local dockerfile="$1"
   # Extract version from: FROM .../kaptain-deploy-scripts:X.Y.Z
   grep -E 'kaptain-deploy-scripts:[0-9]+\.[0-9]+\.[0-9]+' "$dockerfile" \
     | sed -E 's/.*kaptain-deploy-scripts:([0-9]+\.[0-9]+\.[0-9]+).*/\1/' \
     | head -1
-}
-
-increment_patch_version() {
-  local version="$1"
-  local major minor patch
-  IFS='.' read -r major minor patch <<< "$version"
-  echo "${major}.${minor}.$((patch + 1))"
 }
 
 # Find a tag containing the kubectl version (e.g., "1.32" matches "1.0.1.1.32.1")
@@ -71,6 +75,41 @@ update_dockerfile_version() {
   local new_version="$3"
   sed -i.bak "s/kaptain-deploy-scripts:${old_version}/kaptain-deploy-scripts:${new_version}/g" "$dockerfile"
   rm -f "${dockerfile}.bak"
+}
+
+get_current_buildon_version() {
+  local workflow_file="$1"
+  if [[ ! -f "$workflow_file" ]]; then
+    return
+  fi
+  grep -E 'buildon-github-actions/.*@[0-9]' "$workflow_file" \
+    | sed -E 's/.*@([0-9]+\.[0-9]+\.[0-9]+).*/\1/' \
+    | head -1
+}
+
+update_build_workflow_version() {
+  local workflow_file="$1"
+  local old_version="$2"
+  local new_version="$3"
+  sed -i.bak "s|buildon-github-actions/\([^@]*\)@${old_version}|buildon-github-actions/\1@${new_version}|g" "$workflow_file"
+  rm -f "${workflow_file}.bak"
+}
+
+upgrade_build_tooling() {
+  local current_buildon_version
+  current_buildon_version=$(get_current_buildon_version "$BUILD_WORKFLOW_PATH")
+  if [[ -z "$current_buildon_version" ]]; then
+    log "No buildon-github-actions reference found in $BUILD_WORKFLOW_PATH"
+    return 0
+  fi
+  if [[ "$current_buildon_version" == "$LATEST_BUILDON_VERSION" ]]; then
+    log "Build tooling already at $LATEST_BUILDON_VERSION"
+    return 0
+  fi
+  log "Upgrading build tooling $current_buildon_version -> $LATEST_BUILDON_VERSION"
+  update_build_workflow_version "$BUILD_WORKFLOW_PATH" "$current_buildon_version" "$LATEST_BUILDON_VERSION"
+  git add "$BUILD_WORKFLOW_PATH"
+  git commit -m "$BUILDON_COMMIT_MESSAGE"
 }
 
 ensure_clean_state() {
@@ -183,49 +222,8 @@ process_repo() {
   # Ensure main has main* branch specs (so branches created from it inherit correct config)
   fix_branch_specs
 
-  # Get current version and determine new version
-  local current_version
-  current_version=$(get_current_version "$DOCKERFILE_PATH")
-  if [[ -z "$current_version" ]]; then
-    record_failure "$repo_name" "Could not find kaptain-deploy-scripts version in $DOCKERFILE_PATH"
-    return 1
-  fi
-
-  local target_version
-  if [[ -n "$NEW_VERSION" ]]; then
-    target_version="$NEW_VERSION"
-  else
-    target_version=$(increment_patch_version "$current_version")
-  fi
-
+  local target_version="$NEW_VERSION"
   local commit_message="Upgrade to Kaptain Deploy Scripts ${target_version} - see that project for changes included."
-  local main_commit
-
-  # Check if upgrade already done on main
-  if [[ "$current_version" == "$target_version" ]]; then
-    log "Version already at $target_version on main"
-    # Find the existing commit
-    main_commit=$(git log --oneline --grep="Upgrade to Kaptain Deploy Scripts ${target_version}" -1 --format="%H")
-    if [[ -z "$main_commit" ]]; then
-      # Version matches but no commit found - use HEAD
-      main_commit=$(git rev-parse HEAD)
-    fi
-  else
-    log "Upgrading $current_version -> $target_version"
-
-    # Update Dockerfile
-    update_dockerfile_version "$DOCKERFILE_PATH" "$current_version" "$target_version"
-
-    # Commit the change only if there are changes
-    if ! git diff --quiet "$DOCKERFILE_PATH"; then
-      git add "$DOCKERFILE_PATH"
-      git commit -m "$commit_message"
-    else
-      log "No changes to Dockerfile"
-    fi
-
-    main_commit=$(git rev-parse HEAD)
-  fi
 
   # Process kubectl version branches
   for kube_version in "${KUBECTL_VERSIONS[@]}"; do
@@ -234,10 +232,33 @@ process_repo() {
     local base_branch
 
     if [[ "$kube_version" == "1.35" ]]; then
-      # main targets 1.35
       branch_name="main"
       push_branch="upgrade-1.35-to-deploy-scripts-${target_version}"
       base_branch="main"
+
+      # Fetch, checkout, fast-forward - same as every other branch
+      git fetch origin
+      git checkout main
+      if ! git ff origin/main; then
+        record_failure "$repo_name/main" "Could not fast-forward to origin/main"
+        continue
+      fi
+
+      fix_branch_specs
+
+      # Check if upgrade already done on this branch
+      local branch_version
+      branch_version=$(get_current_version "$DOCKERFILE_PATH")
+      if [[ "$branch_version" == "$target_version" ]]; then
+        log "Version already at $target_version on $branch_name"
+      else
+        log "Upgrading $branch_version -> $target_version on $branch_name"
+        update_dockerfile_version "$DOCKERFILE_PATH" "$branch_version" "$target_version"
+        git add "$DOCKERFILE_PATH"
+        git commit -m "$commit_message"
+      fi
+
+      upgrade_build_tooling
     else
       branch_name="main-${kube_version}"
       push_branch="upgrade-${kube_version}-to-deploy-scripts-${target_version}"
@@ -276,6 +297,8 @@ process_repo() {
           git add "$DOCKERFILE_PATH"
           git commit -m "$commit_message"
         fi
+
+        upgrade_build_tooling
       else
         # Remote branch doesn't exist - create local, apply changes, push directly (no PR)
         log "Remote branch ${branch_name} doesn't exist - creating and pushing directly"
@@ -306,6 +329,8 @@ process_repo() {
           git add "$DOCKERFILE_PATH"
           git commit -m "$commit_message"
         fi
+
+        upgrade_build_tooling
 
         # Push directly to remote branch (no PR)
         if ! git push origin "${branch_name}:${branch_name}"; then
@@ -346,27 +371,23 @@ process_repo() {
       2>&1) || {
         # PR might already exist
         if [[ "$pr_url" == *"already exists"* ]]; then
-          log "PR already exists for ${push_branch}"
+          pr_url=$(gh pr list --head "$push_branch" --json url --jq '.[0].url' 2>/dev/null || true)
+          if [[ -n "$pr_url" ]]; then
+            log "PR already exists for ${push_branch}: ${pr_url}"
+          else
+            log "PR already exists for ${push_branch} (could not resolve URL)"
+          fi
         else
           record_failure "$repo_name/$branch_name" "PR creation failed: $pr_url"
+          pr_url=""
         fi
-        pr_url=""
       }
 
     if [[ -n "$pr_url" && "$pr_url" == http* ]]; then
       CREATED_PRS+=("$pr_url")
 
-      # Enable auto-merge for when checks are still pending
       log "Enabling auto-merge for PR"
-      gh pr merge "$pr_url" --auto --merge --delete-branch || log "Could not enable auto-merge (may need repo settings)"
-
-      # If checks already passed, merge immediately
-      local check_status
-      check_status=$(gh pr checks "$pr_url" --json state --jq 'all(.state == "SUCCESS")' 2>/dev/null || echo "false")
-      if [[ "$check_status" == "true" ]]; then
-        log "Checks already passed - merging immediately"
-        gh pr merge "$pr_url" --merge --delete-branch || log "Could not merge (may already be merged)"
-      fi
+      gh pr merge "$pr_url" --auto --merge --delete-branch || log "Could not enable auto-merge for ${pr_url}"
     fi
 
     # Return to main for next iteration
@@ -382,6 +403,25 @@ main() {
     exit 1
   fi
 
+  # Resolve target versions from remote repos
+  LATEST_BUILDON_VERSION=$(get_latest_remote_tag "buildon-github-actions")
+  if [[ -z "$LATEST_BUILDON_VERSION" ]]; then
+    echo "ERROR: Could not determine latest buildon-github-actions version" >&2
+    exit 1
+  fi
+  log "Latest buildon-github-actions: $LATEST_BUILDON_VERSION"
+
+  if [[ -z "$NEW_VERSION" ]]; then
+    NEW_VERSION=$(get_latest_remote_tag "kaptain-deploy-scripts")
+    if [[ -z "$NEW_VERSION" ]]; then
+      echo "ERROR: Could not determine latest kaptain-deploy-scripts version" >&2
+      exit 1
+    fi
+    log "Latest kaptain-deploy-scripts: $NEW_VERSION"
+  else
+    log "Using specified deploy-scripts version: $NEW_VERSION"
+  fi
+
   for repo in "${DEPLOY_IMAGE_DIRS[@]}"; do
     process_repo "$repo" || true
   done
@@ -394,6 +434,26 @@ main() {
     echo "Created PRs:"
     for pr in "${CREATED_PRS[@]}"; do
       echo "  $pr"
+    done
+
+    echo ""
+    log "Checking PRs for merge readiness..."
+    for pr in "${CREATED_PRS[@]}"; do
+      local state
+      state=$(gh pr view "$pr" --json state --jq '.state' 2>/dev/null || echo "UNKNOWN")
+      if [[ "$state" == "MERGED" ]]; then
+        log "Already merged: ${pr}"
+        continue
+      fi
+
+      local check_status
+      check_status=$(gh pr checks "$pr" --json state --jq 'all(.state == "SUCCESS")' 2>/dev/null || echo "false")
+      if [[ "$check_status" == "true" ]]; then
+        log "Checks passed - merging ${pr}"
+        gh pr merge "$pr" --merge --delete-branch || log "Could not merge ${pr}"
+      else
+        log "Checks not ready: ${pr}"
+      fi
     done
   fi
 
