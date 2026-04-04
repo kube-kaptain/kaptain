@@ -19,7 +19,15 @@ kaptain-shared-scripts
 kaptain-skills
 kaptain-status
 kaptain-user-scripts
+layer-and-layerset-build
+layer-github-flow-strict
+layer-image-environment-base
+layer-image-environment-deploy
+layerset-and-layer-build
+layerset-image-environment-base
+layerset-image-environment-deploy
 show-sausage-making
 spec-build-scripts-api
+spec-kaptainpm-schema
 spec-scripts-api-schema
 test-aws-eks-cluster-management-gh-actions-build
