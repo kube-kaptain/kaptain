@@ -1,0 +1,10 @@
+apiVersion: kaptain.org/1.7
+kind: basic-quality-checks
+
+spec:
+  main:
+    quality:
+      branches:
+        blockSlashes: true
+      commits:
+        blockConventional: true
