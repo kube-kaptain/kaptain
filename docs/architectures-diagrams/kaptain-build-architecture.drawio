@@ -1,0 +1,200 @@
+<mxfile host="app.diagrams.net" agent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10.15; rv:148.0) Gecko/20100101 Firefox/148.0" version="29.6.4">
+  <diagram id="build-hierarchy" name="Build Hierarchy">
+    <mxGraphModel dx="1276" dy="589" grid="0" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="1350" pageHeight="650" math="0" shadow="0">
+      <root>
+        <mxCell id="0" />
+        <mxCell id="1" parent="0" />
+        <mxCell id="title" parent="1" style="text;html=1;fontSize=20;fontStyle=1;fontColor=#333333;align=left;verticalAlign=middle;" value="Kaptain Build Hierarchy" vertex="1">
+          <mxGeometry height="30" width="350" x="70" y="23" as="geometry" />
+        </mxCell>
+        <mxCell id="subtitle" parent="1" style="text;html=1;fontSize=10;fontStyle=2;fontColor=#999999;align=left;verticalAlign=middle;" value="App → Product → Environment aggregation" vertex="1">
+          <mxGeometry height="16" width="300" x="72" y="50" as="geometry" />
+        </mxCell>
+        <mxCell id="env-repo" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;strokeWidth=1.5;fontSize=10;fontColor=#333333;shadow=1;" value="run-dev&#xa;repo" vertex="1">
+          <mxGeometry height="50" width="100" x="70" y="100" as="geometry" />
+        </mxCell>
+        <mxCell id="env-image" parent="1" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;strokeWidth=2;fontSize=11;fontStyle=1;fontColor=#333333;shadow=1;" value="&lt;div&gt;run-dev environment deploy&amp;nbsp;OCI image&lt;/div&gt;" vertex="1">
+          <mxGeometry height="50" width="1011" x="189" y="100" as="geometry" />
+        </mxCell>
+        <mxCell id="env-repo-to-image" edge="1" parent="1" source="env-repo" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;strokeColor=#82b366;strokeWidth=1.5;fontSize=9;fontColor=#82b366;fontStyle=2;endArrow=blockThin;endFill=1;" target="env-image" value="produces">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="env-note" parent="1" style="text;html=1;fontSize=9;fontStyle=2;fontColor=#82b366;align=right;verticalAlign=middle;" value="1..N environments" vertex="1">
+          <mxGeometry height="16" width="120" x="607" y="75" as="geometry" />
+        </mxCell>
+        <mxCell id="pw-repo" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#fff2cc;strokeColor=#d6b656;strokeWidth=1.5;fontSize=10;fontColor=#333333;shadow=1;" value="product-website&#xa;repo" vertex="1">
+          <mxGeometry height="50" width="100" x="70" y="280" as="geometry" />
+        </mxCell>
+        <mxCell id="pw-bundle" parent="1" style="shape=note;whiteSpace=wrap;html=1;backgroundOutline=1;size=14;fillColor=#fff2cc;strokeColor=#d6b656;strokeWidth=2;fontSize=10;fontStyle=1;fontColor=#333333;shadow=1;" value="manifests bundle" vertex="1">
+          <mxGeometry height="50" width="437" x="188" y="280" as="geometry" />
+        </mxCell>
+        <mxCell id="pw-repo-to-bundle" edge="1" parent="1" source="pw-repo" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;strokeColor=#d6b656;strokeWidth=1.5;fontSize=9;fontColor=#d6b656;fontStyle=2;endArrow=blockThin;endFill=1;" target="pw-bundle" value="produces">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="pw-to-env" edge="1" parent="1" source="pw-bundle" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;strokeColor=#82b366;strokeWidth=1.5;endArrow=blockThin;endFill=1;exitX=0.5;exitY=0;exitDx=0;exitDy=-14;entryX=0.215;entryY=1.012;entryDx=0;entryDy=0;entryPerimeter=0;" target="env-image" value="">
+          <mxGeometry relative="1" as="geometry">
+            <mxPoint x="407" y="158" as="targetPoint" />
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="pc-repo" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#fff2cc;strokeColor=#d6b656;strokeWidth=1.5;fontSize=10;fontColor=#333333;shadow=1;" value="product-crm&#xa;repo" vertex="1">
+          <mxGeometry height="50" width="95" x="647" y="280" as="geometry" />
+        </mxCell>
+        <mxCell id="pc-bundle" parent="1" style="shape=note;whiteSpace=wrap;html=1;backgroundOutline=1;size=14;fillColor=#fff2cc;strokeColor=#d6b656;strokeWidth=2;fontSize=10;fontStyle=1;fontColor=#333333;shadow=1;gradientColor=none;" value="manifests bundle" vertex="1">
+          <mxGeometry height="50" width="249" x="754" y="280" as="geometry" />
+        </mxCell>
+        <mxCell id="pc-repo-to-bundle" edge="1" parent="1" source="pc-repo" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;strokeColor=#d6b656;strokeWidth=1.5;fontSize=9;fontColor=#d6b656;fontStyle=2;endArrow=blockThin;endFill=1;" target="pc-bundle" value="produces">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="pc-to-env" edge="1" parent="1" source="pc-bundle" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;strokeColor=#82b366;strokeWidth=1.5;endArrow=blockThin;endFill=1;exitX=0.5;exitY=0;exitDx=0;exitDy=-14;entryX=0.681;entryY=1.003;entryDx=0;entryDy=0;entryPerimeter=0;" target="env-image" value="">
+          <mxGeometry relative="1" as="geometry">
+            <Array as="points">
+              <mxPoint x="879" y="215" />
+              <mxPoint x="878" y="215" />
+              <mxPoint x="878" y="150" />
+            </Array>
+            <mxPoint x="912" y="174" as="targetPoint" />
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="m-products" parent="1" style="text;html=1;fontSize=9;fontStyle=2;fontColor=#d6b656;align=center;verticalAlign=middle;" value="M products — per team or major component set" vertex="1">
+          <mxGeometry height="16" width="260" x="537" y="248" as="geometry" />
+        </mxCell>
+        <mxCell id="a1-repo" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;strokeWidth=1.5;fontSize=9;fontColor=#333333;shadow=1;" value="website-api&#xa;repo" vertex="1">
+          <mxGeometry height="82" width="90" x="70" y="460" as="geometry" />
+        </mxCell>
+        <mxCell id="a1-bundle" parent="1" style="shape=note;whiteSpace=wrap;html=1;backgroundOutline=1;size=10;fillColor=#dae8fc;strokeColor=#6c8ebf;strokeWidth=1.5;fontSize=9;fontColor=#333333;shadow=1;" value="manifests&#xa;bundle" vertex="1">
+          <mxGeometry height="40" width="65" x="175" y="457" as="geometry" />
+        </mxCell>
+        <mxCell id="a1-image" parent="1" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;strokeWidth=1.5;fontSize=9;fontColor=#333333;shadow=1;" value="OCI&#xa;image" vertex="1">
+          <mxGeometry height="35" width="62" x="177" y="507" as="geometry" />
+        </mxCell>
+        <mxCell id="a1-r2b" edge="1" parent="1" source="a1-repo" style="rounded=1;html=1;strokeColor=#6c8ebf;strokeWidth=1;endArrow=blockThin;endFill=1;exitX=1;exitY=0.3;exitDx=0;exitDy=0;entryX=0;entryY=0.5;entryDx=0;entryDy=0;" target="a1-bundle" value="">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="a1-r2i" edge="1" parent="1" source="a1-repo" style="rounded=1;html=1;strokeColor=#6c8ebf;strokeWidth=1;endArrow=blockThin;endFill=1;exitX=1;exitY=0.75;exitDx=0;exitDy=0;entryX=0;entryY=0.5;entryDx=0;entryDy=0;" target="a1-image" value="">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="a1-refs" edge="1" parent="1" source="a1-bundle" style="rounded=1;html=1;strokeColor=#999999;strokeWidth=1;fontSize=7;fontColor=#999999;fontStyle=2;endArrow=open;endFill=0;dashed=1;dashPattern=3 3;exitX=0.5;exitY=1;exitDx=0;exitDy=0;entryX=0.5;entryY=0;entryDx=0;entryDy=0;" target="a1-image" value="refs">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="a2-repo" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;strokeWidth=1.5;fontSize=9;fontColor=#333333;shadow=1;" value="website-backend&#xa;repo" vertex="1">
+          <mxGeometry height="82" width="100" x="259" y="460" as="geometry" />
+        </mxCell>
+        <mxCell id="a2-bundle" parent="1" style="shape=note;whiteSpace=wrap;html=1;backgroundOutline=1;size=10;fillColor=#dae8fc;strokeColor=#6c8ebf;strokeWidth=1.5;fontSize=9;fontColor=#333333;shadow=1;" value="manifests&#xa;bundle" vertex="1">
+          <mxGeometry height="40" width="65" x="374" y="457" as="geometry" />
+        </mxCell>
+        <mxCell id="a2-image" parent="1" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;strokeWidth=1.5;fontSize=9;fontColor=#333333;shadow=1;" value="OCI&#xa;image" vertex="1">
+          <mxGeometry height="35" width="62" x="376" y="507" as="geometry" />
+        </mxCell>
+        <mxCell id="a2-r2b" edge="1" parent="1" source="a2-repo" style="rounded=1;html=1;strokeColor=#6c8ebf;strokeWidth=1;endArrow=blockThin;endFill=1;exitX=1;exitY=0.3;exitDx=0;exitDy=0;entryX=0;entryY=0.5;entryDx=0;entryDy=0;" target="a2-bundle" value="">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="a2-r2i" edge="1" parent="1" source="a2-repo" style="rounded=1;html=1;strokeColor=#6c8ebf;strokeWidth=1;endArrow=blockThin;endFill=1;exitX=1;exitY=0.75;exitDx=0;exitDy=0;entryX=0;entryY=0.5;entryDx=0;entryDy=0;" target="a2-image" value="">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="a2-refs" edge="1" parent="1" source="a2-bundle" style="rounded=1;html=1;strokeColor=#999999;strokeWidth=1;fontSize=7;fontColor=#999999;fontStyle=2;endArrow=open;endFill=0;dashed=1;dashPattern=3 3;exitX=0.5;exitY=1;exitDx=0;exitDy=0;entryX=0.5;entryY=0;entryDx=0;entryDy=0;" target="a2-image" value="refs">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="a3-repo" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;strokeWidth=1.5;fontSize=9;fontColor=#333333;shadow=1;" value="website-ui&#xa;repo" vertex="1">
+          <mxGeometry height="82" width="90" x="459" y="460" as="geometry" />
+        </mxCell>
+        <mxCell id="a3-bundle" parent="1" style="shape=note;whiteSpace=wrap;html=1;backgroundOutline=1;size=10;fillColor=#dae8fc;strokeColor=#6c8ebf;strokeWidth=1.5;fontSize=9;fontColor=#333333;shadow=1;" value="manifests&#xa;bundle" vertex="1">
+          <mxGeometry height="40" width="65" x="564" y="457" as="geometry" />
+        </mxCell>
+        <mxCell id="a3-image" parent="1" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;strokeWidth=1.5;fontSize=9;fontColor=#333333;shadow=1;" value="OCI&#xa;image" vertex="1">
+          <mxGeometry height="35" width="62" x="566" y="507" as="geometry" />
+        </mxCell>
+        <mxCell id="a3-r2b" edge="1" parent="1" source="a3-repo" style="rounded=1;html=1;strokeColor=#6c8ebf;strokeWidth=1;endArrow=blockThin;endFill=1;exitX=1;exitY=0.3;exitDx=0;exitDy=0;entryX=0;entryY=0.5;entryDx=0;entryDy=0;" target="a3-bundle" value="">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="a3-r2i" edge="1" parent="1" source="a3-repo" style="rounded=1;html=1;strokeColor=#6c8ebf;strokeWidth=1;endArrow=blockThin;endFill=1;exitX=1;exitY=0.75;exitDx=0;exitDy=0;entryX=0;entryY=0.5;entryDx=0;entryDy=0;" target="a3-image" value="">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="a3-refs" edge="1" parent="1" source="a3-bundle" style="rounded=1;html=1;strokeColor=#999999;strokeWidth=1;fontSize=7;fontColor=#999999;fontStyle=2;endArrow=open;endFill=0;dashed=1;dashPattern=3 3;exitX=0.5;exitY=1;exitDx=0;exitDy=0;entryX=0.5;entryY=0;entryDx=0;entryDy=0;" target="a3-image" value="refs">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="a4-repo" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;strokeWidth=1.5;fontSize=9;fontColor=#333333;shadow=1;" value="crm-service&#xa;repo" vertex="1">
+          <mxGeometry height="82" width="90" x="647" y="460" as="geometry" />
+        </mxCell>
+        <mxCell id="a4-bundle" parent="1" style="shape=note;whiteSpace=wrap;html=1;backgroundOutline=1;size=10;fillColor=#dae8fc;strokeColor=#6c8ebf;strokeWidth=1.5;fontSize=9;fontColor=#333333;shadow=1;" value="manifests&#xa;bundle" vertex="1">
+          <mxGeometry height="40" width="65" x="752" y="457" as="geometry" />
+        </mxCell>
+        <mxCell id="a4-image" parent="1" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;strokeWidth=1.5;fontSize=9;fontColor=#333333;shadow=1;" value="OCI&#xa;image" vertex="1">
+          <mxGeometry height="35" width="62" x="754" y="507" as="geometry" />
+        </mxCell>
+        <mxCell id="a4-r2b" edge="1" parent="1" source="a4-repo" style="rounded=1;html=1;strokeColor=#6c8ebf;strokeWidth=1;endArrow=blockThin;endFill=1;exitX=1;exitY=0.3;exitDx=0;exitDy=0;entryX=0;entryY=0.5;entryDx=0;entryDy=0;" target="a4-bundle" value="">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="a4-r2i" edge="1" parent="1" source="a4-repo" style="rounded=1;html=1;strokeColor=#6c8ebf;strokeWidth=1;endArrow=blockThin;endFill=1;exitX=1;exitY=0.75;exitDx=0;exitDy=0;entryX=0;entryY=0.5;entryDx=0;entryDy=0;" target="a4-image" value="">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="a4-refs" edge="1" parent="1" source="a4-bundle" style="rounded=1;html=1;strokeColor=#999999;strokeWidth=1;fontSize=7;fontColor=#999999;fontStyle=2;endArrow=open;endFill=0;dashed=1;dashPattern=3 3;exitX=0.5;exitY=1;exitDx=0;exitDy=0;entryX=0.5;entryY=0;entryDx=0;entryDy=0;" target="a4-image" value="refs">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="a5-repo" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;strokeWidth=1.5;fontSize=9;fontColor=#333333;shadow=1;" value="crm-portal&#xa;repo" vertex="1">
+          <mxGeometry height="82" width="90" x="837" y="460" as="geometry" />
+        </mxCell>
+        <mxCell id="a5-bundle" parent="1" style="shape=note;whiteSpace=wrap;html=1;backgroundOutline=1;size=10;fillColor=#dae8fc;strokeColor=#6c8ebf;strokeWidth=1.5;fontSize=9;fontColor=#333333;shadow=1;" value="manifests&#xa;bundle" vertex="1">
+          <mxGeometry height="40" width="65" x="942" y="457" as="geometry" />
+        </mxCell>
+        <mxCell id="a5-image" parent="1" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;strokeWidth=1.5;fontSize=9;fontColor=#333333;shadow=1;" value="OCI&#xa;image" vertex="1">
+          <mxGeometry height="35" width="62" x="944" y="507" as="geometry" />
+        </mxCell>
+        <mxCell id="a5-r2b" edge="1" parent="1" source="a5-repo" style="rounded=1;html=1;strokeColor=#6c8ebf;strokeWidth=1;endArrow=blockThin;endFill=1;exitX=1;exitY=0.3;exitDx=0;exitDy=0;entryX=0;entryY=0.5;entryDx=0;entryDy=0;" target="a5-bundle" value="">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="a5-r2i" edge="1" parent="1" source="a5-repo" style="rounded=1;html=1;strokeColor=#6c8ebf;strokeWidth=1;endArrow=blockThin;endFill=1;exitX=1;exitY=0.75;exitDx=0;exitDy=0;entryX=0;entryY=0.5;entryDx=0;entryDy=0;" target="a5-image" value="">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="a5-refs" edge="1" parent="1" source="a5-bundle" style="rounded=1;html=1;strokeColor=#999999;strokeWidth=1;fontSize=7;fontColor=#999999;fontStyle=2;endArrow=open;endFill=0;dashed=1;dashPattern=3 3;exitX=0.5;exitY=1;exitDx=0;exitDy=0;entryX=0.5;entryY=0;entryDx=0;entryDy=0;" target="a5-image" value="refs">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="a6-repo" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;strokeWidth=1.5;fontSize=9;fontColor=#333333;shadow=1;" value="auth-proxy&#xa;repo" vertex="1">
+          <mxGeometry height="82" width="90" x="1027" y="460" as="geometry" />
+        </mxCell>
+        <mxCell id="a6-bundle" parent="1" style="shape=note;whiteSpace=wrap;html=1;backgroundOutline=1;size=10;fillColor=#dae8fc;strokeColor=#6c8ebf;strokeWidth=1.5;fontSize=9;fontColor=#333333;shadow=1;" value="manifests&#xa;bundle" vertex="1">
+          <mxGeometry height="40" width="65" x="1132" y="457" as="geometry" />
+        </mxCell>
+        <mxCell id="a6-image" parent="1" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;strokeWidth=1.5;fontSize=9;fontColor=#333333;shadow=1;" value="OCI&#xa;image" vertex="1">
+          <mxGeometry height="35" width="62" x="1134" y="507" as="geometry" />
+        </mxCell>
+        <mxCell id="a6-r2b" edge="1" parent="1" source="a6-repo" style="rounded=1;html=1;strokeColor=#6c8ebf;strokeWidth=1;endArrow=blockThin;endFill=1;exitX=1;exitY=0.3;exitDx=0;exitDy=0;entryX=0;entryY=0.5;entryDx=0;entryDy=0;" target="a6-bundle" value="">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="a6-r2i" edge="1" parent="1" source="a6-repo" style="rounded=1;html=1;strokeColor=#6c8ebf;strokeWidth=1;endArrow=blockThin;endFill=1;exitX=1;exitY=0.75;exitDx=0;exitDy=0;entryX=0;entryY=0.5;entryDx=0;entryDy=0;" target="a6-image" value="">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="a6-refs" edge="1" parent="1" source="a6-bundle" style="rounded=1;html=1;strokeColor=#999999;strokeWidth=1;fontSize=7;fontColor=#999999;fontStyle=2;endArrow=open;endFill=0;dashed=1;dashPattern=3 3;exitX=0.5;exitY=1;exitDx=0;exitDy=0;entryX=0.5;entryY=0;entryDx=0;entryDy=0;" target="a6-image" value="refs">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="a1b-to-pw" edge="1" parent="1" source="a1-bundle" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;strokeColor=#d6b656;strokeWidth=1.5;endArrow=blockThin;endFill=1;exitX=0.5;exitY=0;exitDx=0;exitDy=-10;entryX=0.158;entryY=1;entryDx=0;entryDy=0;entryPerimeter=0;" target="pw-bundle" value="">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="a2b-to-pw" edge="1" parent="1" source="a2-bundle" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;strokeColor=#d6b656;strokeWidth=1.5;endArrow=blockThin;endFill=1;exitX=0.5;exitY=0;exitDx=0;exitDy=-10;entryX=0.5;entryY=1;entryDx=0;entryDy=0;entryPerimeter=0;" target="pw-bundle" value="">
+          <mxGeometry relative="1" as="geometry">
+            <Array as="points" />
+            <mxPoint x="374" y="368" as="targetPoint" />
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="a3b-to-pw" edge="1" parent="1" source="a3-bundle" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;strokeColor=#d6b656;strokeWidth=1.5;endArrow=blockThin;endFill=1;exitX=0.5;exitY=0;exitDx=0;exitDy=-10;entryX=0.808;entryY=1.013;entryDx=0;entryDy=0;entryPerimeter=0;" target="pw-bundle" value="">
+          <mxGeometry relative="1" as="geometry">
+            <mxPoint x="542" y="334" as="targetPoint" />
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="a4b-to-pc" edge="1" parent="1" source="a4-bundle" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;strokeColor=#d6b656;strokeWidth=1.5;endArrow=blockThin;endFill=1;exitX=0.5;exitY=0;exitDx=0;exitDy=-10;" value="">
+          <mxGeometry relative="1" as="geometry">
+            <mxPoint x="835" y="332" as="targetPoint" />
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="a5b-to-pc" edge="1" parent="1" source="a5-bundle" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;strokeColor=#d6b656;strokeWidth=1.5;endArrow=blockThin;endFill=1;exitX=0.5;exitY=0;exitDx=0;exitDy=-10;entryX=0.671;entryY=1.06;entryDx=0;entryDy=0;entryPerimeter=0;" target="pc-bundle" value="">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="a6b-to-env" edge="1" parent="1" source="a6-bundle" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;strokeColor=#82b366;strokeWidth=1.5;endArrow=blockThin;endFill=1;exitX=0.5;exitY=0;exitDx=0;exitDy=-10;entryX=0.964;entryY=1;entryDx=0;entryDy=0;entryPerimeter=0;" target="env-image" value="">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="n-apps" parent="1" style="text;html=1;fontSize=9;fontStyle=2;fontColor=#6c8ebf;align=center;verticalAlign=middle;" value="N apps — each produces an OCI image + manifests bundle on successful build" vertex="1">
+          <mxGeometry height="16" width="430" x="350" y="555" as="geometry" />
+        </mxCell>
+      </root>
+    </mxGraphModel>
+  </diagram>
+</mxfile>
