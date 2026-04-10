@@ -2,9 +2,5 @@ apiVersion: kaptain.org/1.7
 kind: basic-quality-checks
 
 spec:
-  main:
-    quality:
-      branches:
-        blockSlashes: true
-      commits:
-        blockConventional: true
+  layers:
+    - layer-github-flow-strict:[1.2,2.0)
