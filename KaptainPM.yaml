@@ -1,6 +1,6 @@
-apiVersion: kaptain.org/1.7
+apiVersion: kaptain.org/1.11
 kind: basic-quality-checks
 
 spec:
   layers:
-    - layer-github-flow-strict:[1.2,2.0)
+    - layer-github-flow-strict:[1.3,2.0)
