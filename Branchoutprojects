@@ -11,7 +11,6 @@ image-environment-deploy-alpine-3-23
 image-environment-deploy-trixie-slim
 image-environment-deploy-ubi-9-minimal
 image-environment-deploy-ubuntu-24-04-lts
-image-pause
 kaptain-build-scripts
 kaptain-deploy-scripts
 kaptain-marketplace
@@ -31,6 +30,8 @@ layerset-kaptain-scripts-build
 show-sausage-making
 spec-build-scripts-api
 spec-kaptainpm-schema
+spec-manifests-contract-schema
 spec-scripts-api-schema
 test-aws-eks-cluster-management-gh-actions-build
+vendor-envoy-gateway
 vendor-kubernetes-sigs-gateway-api
