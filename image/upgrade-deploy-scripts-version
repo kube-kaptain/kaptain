@@ -112,6 +112,59 @@ upgrade_build_tooling() {
   git commit -m "$BUILDON_COMMIT_MESSAGE"
 }
 
+# Find the latest base image tag matching the kubectl version (e.g., "1.32" matches "1.32.8")
+get_latest_base_image_tag() {
+  local slug="$1"
+  local kube_version="$2"
+  git ls-remote --tags --refs "${GITHUB_REMOTE_BASE}/image-environment-base-${slug}.git" \
+    | sed 's|.*/||' \
+    | grep -E "^${kube_version}\." \
+    | sort -V \
+    | tail -1
+}
+
+get_current_base_image_version() {
+  local dockerfile="$1"
+  local slug="$2"
+  grep -E "image-environment-base-${slug}:[0-9]+\.[0-9]+\.[0-9]+" "$dockerfile" \
+    | sed -E "s/.*image-environment-base-${slug}:([0-9]+\.[0-9]+\.[0-9]+).*/\1/" \
+    | head -1
+}
+
+update_dockerfile_base_image_version() {
+  local dockerfile="$1"
+  local slug="$2"
+  local old_version="$3"
+  local new_version="$4"
+  sed -i.bak "s|image-environment-base-${slug}:${old_version}|image-environment-base-${slug}:${new_version}|g" "$dockerfile"
+  rm -f "${dockerfile}.bak"
+}
+
+upgrade_base_image() {
+  local slug="$1"
+  local kube_version="$2"
+  local current_base_version
+  current_base_version=$(get_current_base_image_version "$DOCKERFILE_PATH" "$slug")
+  if [[ -z "$current_base_version" ]]; then
+    log "No base image FROM line found in $DOCKERFILE_PATH"
+    return 0
+  fi
+  local latest_base_version
+  latest_base_version=$(get_latest_base_image_tag "$slug" "$kube_version")
+  if [[ -z "$latest_base_version" ]]; then
+    log "No matching base image tag found for ${kube_version}.*"
+    return 0
+  fi
+  if [[ "$current_base_version" == "$latest_base_version" ]]; then
+    log "Base image already at $latest_base_version"
+    return 0
+  fi
+  log "Upgrading base image $current_base_version -> $latest_base_version"
+  update_dockerfile_base_image_version "$DOCKERFILE_PATH" "$slug" "$current_base_version" "$latest_base_version"
+  git add "$DOCKERFILE_PATH"
+  git commit -m "Upgrade to latest base image: ${latest_base_version}."
+}
+
 ensure_clean_state() {
   local repo_dir="$1"
   cd "$repo_dir"
@@ -134,65 +187,6 @@ ensure_clean_state() {
     return 1
   fi
   return 0
-}
-
-# Fix branch specs to use main* pattern (so branches inherit correct config)
-fix_branch_specs() {
-  local workflow_file="$BUILD_WORKFLOW_PATH"
-  local needs_commit=false
-
-  if [[ ! -f "$workflow_file" ]]; then
-    log "Warning: $workflow_file not found"
-    return 0
-  fi
-
-  # Check for "- main" format (YAML list style)
-  if grep -q '^\s*-\s*main\s*$' "$workflow_file"; then
-    log "Fixing build.yaml branch specs: - main -> ['main*']"
-    sed -i.bak "s/^\(\s*-\s*\)main\s*$/\1['main*']/" "$workflow_file"
-    rm -f "${workflow_file}.bak"
-    needs_commit=true
-  fi
-
-  # Check for "[main]" format (inline array style)
-  if grep -q '\[main\]' "$workflow_file"; then
-    log "Fixing build.yaml branch specs: [main] -> ['main*']"
-    sed -i.bak "s/\[main\]/['main*']/g" "$workflow_file"
-    rm -f "${workflow_file}.bak"
-    needs_commit=true
-  fi
-
-  if [[ "$needs_commit" == "true" ]] && ! git diff --quiet "$workflow_file"; then
-    git add "$workflow_file"
-    git commit -m "Ensure this branch builds as a release."
-  fi
-}
-
-# Ensure build.yaml has additional-release-branches input (for non-main branches)
-ensure_release_branch_config() {
-  local workflow_file="$BUILD_WORKFLOW_PATH"
-  local current_branch
-  current_branch=$(git rev-parse --abbrev-ref HEAD)
-
-  if [[ ! -f "$workflow_file" ]]; then
-    log "Warning: $workflow_file not found"
-    return 0
-  fi
-
-  # First ensure branch specs are correct
-  fix_branch_specs
-
-  # Check if additional-release-branches input exists
-  if ! grep -q 'additional-release-branches' "$workflow_file"; then
-    log "Adding additional-release-branches: ${current_branch}"
-    # Add at end of file with blank line above
-    printf '\n      additional-release-branches: "%s"\n' "${current_branch}" >> "$workflow_file"
-
-    if ! git diff --quiet "$workflow_file"; then
-      git add "$workflow_file"
-      git commit -m "Ensure this branch builds as a release."
-    fi
-  fi
 }
 
 # Check if a commit with exact message exists on current branch
@@ -219,9 +213,7 @@ process_repo() {
     return 1
   fi
 
-  # Ensure main has main* branch specs (so branches created from it inherit correct config)
-  fix_branch_specs
-
+  local slug="${repo_name#image-environment-deploy-}"
   local target_version="$NEW_VERSION"
   local commit_message="Upgrade to Kaptain Deploy Scripts ${target_version} - see that project for changes included."
 
@@ -244,7 +236,7 @@ process_repo() {
         continue
       fi
 
-      fix_branch_specs
+      upgrade_base_image "$slug" "$kube_version"
 
       # Check if upgrade already done on this branch
       local branch_version
@@ -282,8 +274,7 @@ process_repo() {
           git checkout -b "$branch_name" "origin/${branch_name}"
         fi
 
-        # Ensure release branch config
-        ensure_release_branch_config
+        upgrade_base_image "$slug" "$kube_version"
 
         # Check if upgrade already done on this branch
         local branch_version
@@ -317,8 +308,7 @@ process_repo() {
           fi
         fi
 
-        # Ensure release branch config
-        ensure_release_branch_config
+        upgrade_base_image "$slug" "$kube_version"
 
         # Make the change directly on this branch
         local branch_version
@@ -352,36 +342,51 @@ process_repo() {
       continue
     fi
 
-    # Push to unique remote branch
-    log "Pushing ${branch_name} -> origin/${push_branch}"
-    if ! git push origin "${branch_name}:${push_branch}"; then
-      record_failure "$repo_name/$branch_name" "Push failed"
-      git checkout main
-      continue
-    fi
+    # Decide whether we have new content to push or the remote upgrade branch
+    # already matches local. Lets us pick accurate logs: "Creating PR" only when
+    # something actually new is being submitted, otherwise just look up the existing PR.
+    local local_sha remote_push_sha
+    local_sha=$(git rev-parse HEAD)
+    remote_push_sha=$(git ls-remote origin "${push_branch}" 2>/dev/null | awk '{print $1}')
 
-    # Create PR
-    log "Creating PR for ${push_branch}"
-    local pr_url
-    pr_url=$(gh pr create \
-      --title "$commit_message" \
-      --body "" \
-      --base "$base_branch" \
-      --head "$push_branch" \
-      2>&1) || {
-        # PR might already exist
-        if [[ "$pr_url" == *"already exists"* ]]; then
-          pr_url=$(gh pr list --head "$push_branch" --json url --jq '.[0].url' 2>/dev/null || true)
-          if [[ -n "$pr_url" ]]; then
-            log "PR already exists for ${push_branch}: ${pr_url}"
+    local pr_url=""
+    if [[ -n "${remote_push_sha}" && "${local_sha}" == "${remote_push_sha}" ]]; then
+      log "No new changes for ${push_branch} - checking for existing PR"
+      pr_url=$(gh pr list --head "$push_branch" --json url --jq '.[0].url' 2>/dev/null || true)
+      if [[ -n "$pr_url" ]]; then
+        log "Found existing PR: ${pr_url}"
+      else
+        log "No PR found for ${push_branch}"
+      fi
+    else
+      log "Pushing ${branch_name} -> origin/${push_branch}"
+      if ! git push origin "${branch_name}:${push_branch}"; then
+        record_failure "$repo_name/$branch_name" "Push failed"
+        git checkout main
+        continue
+      fi
+
+      log "Creating PR for ${push_branch}"
+      pr_url=$(gh pr create \
+        --title "$commit_message" \
+        --body "" \
+        --base "$base_branch" \
+        --head "$push_branch" \
+        2>&1) || {
+          # PR might already exist (someone created it manually, or a race with another run)
+          if [[ "$pr_url" == *"already exists"* ]]; then
+            pr_url=$(gh pr list --head "$push_branch" --json url --jq '.[0].url' 2>/dev/null || true)
+            if [[ -n "$pr_url" ]]; then
+              log "Found existing PR: ${pr_url}"
+            else
+              log "PR already exists for ${push_branch} (could not resolve URL)"
+            fi
           else
-            log "PR already exists for ${push_branch} (could not resolve URL)"
+            record_failure "$repo_name/$branch_name" "PR creation failed: $pr_url"
+            pr_url=""
           fi
-        else
-          record_failure "$repo_name/$branch_name" "PR creation failed: $pr_url"
-          pr_url=""
-        fi
-      }
+        }
+    fi
 
     if [[ -n "$pr_url" && "$pr_url" == http* ]]; then
       CREATED_PRS+=("$pr_url")
@@ -393,6 +398,116 @@ process_repo() {
     # Return to main for next iteration
     git checkout main
   done
+}
+
+# If this run produced no PRs (everything idempotent), scan each deploy repo for
+# open PRs whose head matches this script's naming convention for the target
+# version. Found PRs are appended to CREATED_PRS so wait_for_prs can monitor
+# and merge them — useful when a previous run created PRs but auto-merge
+# couldn't fire (e.g. no required checks, settings change since).
+discover_existing_prs() {
+  local org repo url suffix
+  org="${GITHUB_REMOTE_BASE##*/}"
+  suffix="-to-deploy-scripts-${NEW_VERSION}"
+  for repo in "${DEPLOY_IMAGE_DIRS[@]}"; do
+    while IFS= read -r url; do
+      [[ -z "${url}" ]] && continue
+      CREATED_PRS+=("${url}")
+      log "Discovered existing PR: ${url}"
+    done < <(gh pr list \
+      --repo "${org}/${repo}" \
+      --state open \
+      --json url,headRefName \
+      --jq ".[] | select(.headRefName | endswith(\"${suffix}\")) | .url" \
+      2>/dev/null || true)
+  done
+}
+
+# Poll until all CREATED_PRS reach MERGED. Aborts on any failed check or CLOSED PR.
+# Auto-merge is preferred (enabled at PR-creation time). If a PR has auto-merge
+# disabled (e.g. settings drift, "clean status" rejection) AND its checks are not
+# pending and not failed, we merge it directly as a fallback.
+# Configurable via POLL_INTERVAL (default 30s) and POLL_TIMEOUT (default 1800s).
+wait_for_prs() {
+  local poll_interval="${POLL_INTERVAL:-30}"
+  local poll_timeout="${POLL_TIMEOUT:-1800}"
+  local elapsed=0
+  local -a pending=("${CREATED_PRS[@]}")
+  local -a still_pending
+  local pr state failed ready auto
+
+  log "Waiting for ${#pending[@]} PR(s) to merge (poll=${poll_interval}s, timeout=${poll_timeout}s)..."
+
+  while [[ ${#pending[@]} -gt 0 ]]; do
+    if [[ "${elapsed}" -ge "${poll_timeout}" ]]; then
+      for pr in "${pending[@]}"; do
+        record_failure "${pr}" "Did not merge within ${poll_timeout}s"
+      done
+      return 1
+    fi
+
+    still_pending=()
+    for pr in "${pending[@]}"; do
+      state=$(gh pr view "${pr}" --json state --jq '.state' 2>/dev/null || echo "UNKNOWN")
+      case "${state}" in
+        MERGED)
+          log "Merged: ${pr}"
+          ;;
+        CLOSED)
+          record_failure "${pr}" "PR closed without merging"
+          return 1
+          ;;
+        OPEN)
+          # any() over empty array returns false (correct), so this avoids Bug 1.
+          failed=$(gh pr checks "${pr}" --json state \
+            --jq 'any(.state == "FAILURE" or .state == "ERROR" or .state == "CANCELLED" or .state == "TIMED_OUT" or .state == "STARTUP_FAILURE" or .state == "ACTION_REQUIRED")' \
+            2>/dev/null || echo "false")
+          if [[ "${failed}" == "true" ]]; then
+            record_failure "${pr}" "Has failed checks"
+            return 1
+          fi
+          # ready: nothing pending and no failures. all() is vacuously true on empty,
+          # which is the "clean status" case GitHub uses to refuse auto-merge.
+          ready=$(gh pr checks "${pr}" --json state \
+            --jq 'all(.state == "SUCCESS" or .state == "NEUTRAL" or .state == "SKIPPED")' \
+            2>/dev/null || echo "false")
+          if [[ "${ready}" == "true" ]]; then
+            auto=$(gh pr view "${pr}" --json autoMergeRequest --jq '.autoMergeRequest != null' 2>/dev/null || echo "false")
+            if [[ "${auto}" != "true" ]]; then
+              log "Checks clean, auto-merge not enabled - merging ${pr}"
+              if gh pr merge "${pr}" --merge --delete-branch 2>/dev/null; then
+                log "Merged: ${pr}"
+                continue
+              else
+                record_failure "${pr}" "Direct merge failed"
+                return 1
+              fi
+            fi
+          fi
+          still_pending+=("${pr}")
+          ;;
+        *)
+          # UNKNOWN or transient — keep polling
+          still_pending+=("${pr}")
+          ;;
+      esac
+    done
+
+    # Bash 3.2 safe array reassignment under set -u
+    if [[ ${#still_pending[@]} -gt 0 ]]; then
+      pending=("${still_pending[@]}")
+    else
+      pending=()
+    fi
+
+    if [[ ${#pending[@]} -gt 0 ]]; then
+      sleep "${poll_interval}"
+      elapsed=$((elapsed + poll_interval))
+    fi
+  done
+
+  log "All PRs merged."
+  return 0
 }
 
 main() {
@@ -426,35 +541,23 @@ main() {
     process_repo "$repo" || true
   done
 
+  if [[ ${#CREATED_PRS[@]} -eq 0 ]]; then
+    log "No PRs created this run - scanning for existing open upgrade PRs..."
+    discover_existing_prs
+  fi
+
   echo ""
   log "Upgrade complete!"
 
   if [[ ${#CREATED_PRS[@]} -gt 0 ]]; then
     echo ""
-    echo "Created PRs:"
+    echo "Created or existing found PRs:"
     for pr in "${CREATED_PRS[@]}"; do
       echo "  $pr"
     done
 
     echo ""
-    log "Checking PRs for merge readiness..."
-    for pr in "${CREATED_PRS[@]}"; do
-      local state
-      state=$(gh pr view "$pr" --json state --jq '.state' 2>/dev/null || echo "UNKNOWN")
-      if [[ "$state" == "MERGED" ]]; then
-        log "Already merged: ${pr}"
-        continue
-      fi
-
-      local check_status
-      check_status=$(gh pr checks "$pr" --json state --jq 'all(.state == "SUCCESS")' 2>/dev/null || echo "false")
-      if [[ "$check_status" == "true" ]]; then
-        log "Checks passed - merging ${pr}"
-        gh pr merge "$pr" --merge --delete-branch || log "Could not merge ${pr}"
-      else
-        log "Checks not ready: ${pr}"
-      fi
-    done
+    wait_for_prs || true
   fi
 
   if [[ ${#FAILURES[@]} -gt 0 ]]; then
