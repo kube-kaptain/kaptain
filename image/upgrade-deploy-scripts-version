@@ -21,10 +21,16 @@ DEPLOY_IMAGE_DIRS=(
   "image-environment-deploy-ubuntu-24-04-lts"
 )
 KUBECTL_VERSIONS=("1.32" "1.33" "1.34" "1.35")
+# The version carried on main rather than a main-1.3X branch - must be one of
+# the versions above. Bumping to a new kubectl minor means adding it to the
+# array and moving this, in that order.
+MAIN_KUBECTL_VERSION="1.35"
 DOCKERFILE_PATH="src/docker/Dockerfile"
 BUILD_WORKFLOW_PATH=".github/workflows/build.yaml"
-GITHUB_REMOTE_BASE="https://github.com/kube-kaptain"
-BUILDON_COMMIT_MESSAGE="Upgrade to latest build tooling."
+KAPTAINPM_PATH="KaptainPM.yaml"
+GITHUB_ORG="kube-kaptain"
+GITHUB_REMOTE_BASE="https://github.com/${GITHUB_ORG}"
+BUILDON_COMMIT_MESSAGE_PREFIX="Upgrade to latest build tooling"
 
 NEW_VERSION="${1:-}"
 
@@ -63,10 +69,11 @@ get_current_version() {
     | head -1
 }
 
-# Find a tag containing the kubectl version (e.g., "1.32" matches "1.0.1.1.32.1")
+# Find the newest tag containing the kubectl version (e.g., "1.32" matches
+# "1.0.1.1.32.1"). Version sorted: the first tag git lists is the oldest.
 find_tag_for_kubectl_version() {
   local kube_version="$1"
-  git tag --list "*${kube_version}*" | head -1
+  git tag --list "*${kube_version}*" | sort -V | tail -1
 }
 
 update_dockerfile_version() {
@@ -75,6 +82,55 @@ update_dockerfile_version() {
   local new_version="$3"
   sed -i.bak "s/kaptain-deploy-scripts:${old_version}/kaptain-deploy-scripts:${new_version}/g" "$dockerfile"
   rm -f "${dockerfile}.bak"
+}
+
+# Bump the deploy scripts version in the Dockerfile. An empty current version
+# means the FROM line no longer matches the expected shape: bail rather than sed
+# a bare tag prefix and commit a corrupt image reference.
+upgrade_deploy_scripts_version() {
+  local context="$1"
+  local target_version="$2"
+  local commit_message="$3"
+  local branch_version
+  branch_version=$(get_current_version "$DOCKERFILE_PATH")
+  if [[ -z "$branch_version" ]]; then
+    record_failure "$context" "No kaptain-deploy-scripts version found in $DOCKERFILE_PATH"
+    return 1
+  fi
+  if [[ "$branch_version" == "$target_version" ]]; then
+    log "Version already at $target_version on $context"
+    return 0
+  fi
+  log "Upgrading $branch_version -> $target_version on $context"
+  update_dockerfile_version "$DOCKERFILE_PATH" "$branch_version" "$target_version"
+  git add "$DOCKERFILE_PATH"
+  git commit -m "$commit_message"
+}
+
+# buildon tags do not encode the KaptainPM schema version they ship - 1.1.37
+# carries 1.19, 1.1.52 carries 1.25 - so read it from the tag itself.
+get_schema_version_for_buildon_tag() {
+  local tag="$1"
+  gh api "repos/${GITHUB_ORG}/buildon-github-actions/contents/src/schemas/version?ref=${tag}" \
+    -H "Accept: application/vnd.github.raw" 2>/dev/null | tr -d '[:space:]'
+}
+
+get_current_api_version() {
+  local project_file="$1"
+  if [[ ! -f "$project_file" ]]; then
+    return
+  fi
+  grep -E '^apiVersion: kaptain\.org/[0-9]+(\.[0-9]+)*' "$project_file" \
+    | sed -E 's|^apiVersion: kaptain\.org/([0-9]+(\.[0-9]+)*).*|\1|' \
+    | head -1
+}
+
+update_api_version() {
+  local project_file="$1"
+  local old_version="$2"
+  local new_version="$3"
+  sed -i.bak "s|^apiVersion: kaptain\.org/${old_version}$|apiVersion: kaptain.org/${new_version}|" "$project_file"
+  rm -f "${project_file}.bak"
 }
 
 get_current_buildon_version() {
@@ -95,21 +151,51 @@ update_build_workflow_version() {
   rm -f "${workflow_file}.bak"
 }
 
+# Pins the build tooling and, in the same commit, the schema version that
+# tooling ships, declared as the project file's apiVersion.
 upgrade_build_tooling() {
   local current_buildon_version
+  local current_api_version
+  local summary
+  # One entry per thing actually bumped, so the message names only those
+  local -a changes=()
+
   current_buildon_version=$(get_current_buildon_version "$BUILD_WORKFLOW_PATH")
   if [[ -z "$current_buildon_version" ]]; then
     log "No buildon-github-actions reference found in $BUILD_WORKFLOW_PATH"
-    return 0
-  fi
-  if [[ "$current_buildon_version" == "$LATEST_BUILDON_VERSION" ]]; then
+  elif [[ "$current_buildon_version" == "$LATEST_BUILDON_VERSION" ]]; then
     log "Build tooling already at $LATEST_BUILDON_VERSION"
+  else
+    log "Upgrading build tooling $current_buildon_version -> $LATEST_BUILDON_VERSION"
+    update_build_workflow_version "$BUILD_WORKFLOW_PATH" "$current_buildon_version" "$LATEST_BUILDON_VERSION"
+    git add "$BUILD_WORKFLOW_PATH"
+    changes+=("workflow to ${LATEST_BUILDON_VERSION}")
+  fi
+
+  if [[ -n "$LATEST_SCHEMA_VERSION" ]]; then
+    current_api_version=$(get_current_api_version "$KAPTAINPM_PATH")
+    if [[ -z "$current_api_version" ]]; then
+      warn "No apiVersion found in $KAPTAINPM_PATH"
+    elif [[ "$current_api_version" == "$LATEST_SCHEMA_VERSION" ]]; then
+      log "apiVersion already at kaptain.org/$LATEST_SCHEMA_VERSION"
+    else
+      log "Upgrading apiVersion kaptain.org/$current_api_version -> kaptain.org/$LATEST_SCHEMA_VERSION"
+      update_api_version "$KAPTAINPM_PATH" "$current_api_version" "$LATEST_SCHEMA_VERSION"
+      git add "$KAPTAINPM_PATH"
+      changes+=("apiVersion to ${LATEST_SCHEMA_VERSION}")
+    fi
+  fi
+
+  if [[ ${#changes[@]} -eq 0 ]]; then
     return 0
   fi
-  log "Upgrading build tooling $current_buildon_version -> $LATEST_BUILDON_VERSION"
-  update_build_workflow_version "$BUILD_WORKFLOW_PATH" "$current_buildon_version" "$LATEST_BUILDON_VERSION"
-  git add "$BUILD_WORKFLOW_PATH"
-  git commit -m "$BUILDON_COMMIT_MESSAGE"
+
+  if [[ ${#changes[@]} -eq 2 ]]; then
+    summary="${changes[0]} and ${changes[1]}"
+  else
+    summary="${changes[0]}"
+  fi
+  git commit -m "${BUILDON_COMMIT_MESSAGE_PREFIX}: ${summary}"
 }
 
 # Find the latest base image tag matching the kubectl version (e.g., "1.32" matches "1.32.8")
@@ -165,6 +251,27 @@ upgrade_base_image() {
   git commit -m "Upgrade to latest base image: ${latest_base_version}."
 }
 
+# Bring the local branch in line with its upstream without losing local work.
+# Fast-forward first, which also covers being merely ahead: the upstream is an
+# ancestor, so it is a no-op and hand-made commits stay put to ride along in the
+# PR. Only genuine divergence, upstream moved AND local commits exist, needs the
+# rebase. A rebase that stops for conflicts is aborted and reported: half-rebased
+# repos are worse than untouched ones, and only a human can settle the conflict.
+# Uses plain git rather than the ff alias so it does not depend on user config.
+sync_to_upstream() {
+  local branch="$1"
+  if git merge --ff-only "origin/${branch}"; then
+    return 0
+  fi
+  warn "${branch} has diverged from origin/${branch} - rebasing local commits onto it"
+  if git rebase "origin/${branch}"; then
+    log "Rebased local commits on ${branch} onto origin/${branch}"
+    return 0
+  fi
+  git rebase --abort 2>/dev/null || true
+  return 1
+}
+
 ensure_clean_state() {
   local repo_dir="$1"
   cd "$repo_dir"
@@ -178,21 +285,17 @@ ensure_clean_state() {
   # Checkout main
   git checkout main
 
-  # Fetch and fast-forward
+  # Fetch and line up with the upstream, keeping any local commits
   git fetch origin
-  git ff origin/main
+  if ! sync_to_upstream main; then
+    return 1
+  fi
 
   # Verify clean state
   if ! git diff --quiet || ! git diff --cached --quiet; then
     return 1
   fi
   return 0
-}
-
-# Check if a commit with exact message exists on current branch
-commit_exists_on_branch() {
-  local message="$1"
-  git log --oneline --grep="^${message}$" -1 | grep -q .
 }
 
 process_repo() {
@@ -223,31 +326,23 @@ process_repo() {
     local push_branch
     local base_branch
 
-    if [[ "$kube_version" == "1.35" ]]; then
+    if [[ "$kube_version" == "$MAIN_KUBECTL_VERSION" ]]; then
       branch_name="main"
-      push_branch="upgrade-1.35-to-deploy-scripts-${target_version}"
+      push_branch="upgrade-${kube_version}-to-deploy-scripts-${target_version}"
       base_branch="main"
 
-      # Fetch, checkout, fast-forward - same as every other branch
+      # Fetch, checkout, sync - same as every other branch
       git fetch origin
       git checkout main
-      if ! git ff origin/main; then
-        record_failure "$repo_name/main" "Could not fast-forward to origin/main"
+      if ! sync_to_upstream main; then
+        record_failure "$repo_name/main" "Diverged from origin/main and the rebase hit conflicts - resolve by hand"
         continue
       fi
 
       upgrade_base_image "$slug" "$kube_version"
 
-      # Check if upgrade already done on this branch
-      local branch_version
-      branch_version=$(get_current_version "$DOCKERFILE_PATH")
-      if [[ "$branch_version" == "$target_version" ]]; then
-        log "Version already at $target_version on $branch_name"
-      else
-        log "Upgrading $branch_version -> $target_version on $branch_name"
-        update_dockerfile_version "$DOCKERFILE_PATH" "$branch_version" "$target_version"
-        git add "$DOCKERFILE_PATH"
-        git commit -m "$commit_message"
+      if ! upgrade_deploy_scripts_version "$repo_name/$branch_name" "$target_version" "$commit_message"; then
+        continue
       fi
 
       upgrade_build_tooling
@@ -262,10 +357,10 @@ process_repo() {
       if git show-ref --verify --quiet "refs/remotes/origin/${branch_name}"; then
         # Remote branch exists
         if git show-ref --verify --quiet "refs/heads/${branch_name}"; then
-          # Local branch exists - checkout and fast-forward to remote
+          # Local branch exists - checkout and sync with the remote
           git checkout "$branch_name"
-          if ! git ff "origin/${branch_name}"; then
-            record_failure "$repo_name/$branch_name" "Could not fast-forward to origin/${branch_name}"
+          if ! sync_to_upstream "$branch_name"; then
+            record_failure "$repo_name/$branch_name" "Diverged from origin/${branch_name} and the rebase hit conflicts - resolve by hand"
             git checkout main
             continue
           fi
@@ -276,17 +371,9 @@ process_repo() {
 
         upgrade_base_image "$slug" "$kube_version"
 
-        # Check if upgrade already done on this branch
-        local branch_version
-        branch_version=$(get_current_version "$DOCKERFILE_PATH")
-        if [[ "$branch_version" == "$target_version" ]]; then
-          log "Version already at $target_version on $branch_name"
-        else
-          # Make the change directly on this branch
-          log "Upgrading $branch_version -> $target_version on $branch_name"
-          update_dockerfile_version "$DOCKERFILE_PATH" "$branch_version" "$target_version"
-          git add "$DOCKERFILE_PATH"
-          git commit -m "$commit_message"
+        if ! upgrade_deploy_scripts_version "$repo_name/$branch_name" "$target_version" "$commit_message"; then
+          git checkout main
+          continue
         fi
 
         upgrade_build_tooling
@@ -311,13 +398,9 @@ process_repo() {
         upgrade_base_image "$slug" "$kube_version"
 
         # Make the change directly on this branch
-        local branch_version
-        branch_version=$(get_current_version "$DOCKERFILE_PATH")
-        if [[ "$branch_version" != "$target_version" ]]; then
-          log "Upgrading $branch_version -> $target_version on $branch_name"
-          update_dockerfile_version "$DOCKERFILE_PATH" "$branch_version" "$target_version"
-          git add "$DOCKERFILE_PATH"
-          git commit -m "$commit_message"
+        if ! upgrade_deploy_scripts_version "$repo_name/$branch_name" "$target_version" "$commit_message"; then
+          git checkout main
+          continue
         fi
 
         upgrade_build_tooling
@@ -388,11 +471,13 @@ process_repo() {
         }
     fi
 
+    # Deliberately no 'gh pr merge --auto' here. On a branch with no required
+    # status checks there is nothing for auto-merge to wait for, so GitHub
+    # merges the moment it has computed mergeability - which has landed merges
+    # seconds after creation, before the build workflow even existed. Merging is
+    # wait_for_prs' job, once checks have appeared and passed.
     if [[ -n "$pr_url" && "$pr_url" == http* ]]; then
       CREATED_PRS+=("$pr_url")
-
-      log "Enabling auto-merge for PR"
-      gh pr merge "$pr_url" --auto --merge --delete-branch || log "Could not enable auto-merge for ${pr_url}"
     fi
 
     # Return to main for next iteration
@@ -400,22 +485,35 @@ process_repo() {
   done
 }
 
-# If this run produced no PRs (everything idempotent), scan each deploy repo for
-# open PRs whose head matches this script's naming convention for the target
-# version. Found PRs are appended to CREATED_PRS so wait_for_prs can monitor
-# and merge them — useful when a previous run created PRs but auto-merge
-# couldn't fire (e.g. no required checks, settings change since).
+already_tracked() {
+  local candidate="$1"
+  local tracked
+  for tracked in ${CREATED_PRS[@]+"${CREATED_PRS[@]}"}; do
+    if [[ "${tracked}" == "${candidate}" ]]; then
+      return 0
+    fi
+  done
+  return 1
+}
+
+# Scan every deploy repo for open PRs whose head matches this script's naming
+# convention for the target version, and track any this run did not create
+# itself. Runs unconditionally: a partial run creates some PRs and leaves
+# earlier ones open, and those still need monitoring and merging (e.g. a
+# previous run created them but auto-merge couldn't fire).
 discover_existing_prs() {
-  local org repo url suffix
-  org="${GITHUB_REMOTE_BASE##*/}"
+  local repo url suffix
   suffix="-to-deploy-scripts-${NEW_VERSION}"
   for repo in "${DEPLOY_IMAGE_DIRS[@]}"; do
     while IFS= read -r url; do
       [[ -z "${url}" ]] && continue
+      if already_tracked "${url}"; then
+        continue
+      fi
       CREATED_PRS+=("${url}")
       log "Discovered existing PR: ${url}"
     done < <(gh pr list \
-      --repo "${org}/${repo}" \
+      --repo "${GITHUB_ORG}/${repo}" \
       --state open \
       --json url,headRefName \
       --jq ".[] | select(.headRefName | endswith(\"${suffix}\")) | .url" \
@@ -423,10 +521,14 @@ discover_existing_prs() {
   done
 }
 
-# Poll until all CREATED_PRS reach MERGED. Aborts on any failed check or CLOSED PR.
-# Auto-merge is preferred (enabled at PR-creation time). If a PR has auto-merge
-# disabled (e.g. settings drift, "clean status" rejection) AND its checks are not
-# pending and not failed, we merge it directly as a fallback.
+# Poll until all CREATED_PRS reach MERGED. A PR that fails its checks, gets
+# closed, or cannot be merged is recorded and dropped from the poll set - the
+# others keep going, since one repo's broken build is no reason to abandon the
+# rest half merged.
+# A PR is merged here only once its checks have appeared AND all passed. An
+# empty check list means "not registered yet", never "clean": merging on empty
+# is what let a red build land. Checks that never appear simply keep the PR
+# pending until POLL_TIMEOUT reports it - unverified is never merged.
 # Configurable via POLL_INTERVAL (default 30s) and POLL_TIMEOUT (default 1800s).
 wait_for_prs() {
   local poll_interval="${POLL_INTERVAL:-30}"
@@ -434,7 +536,8 @@ wait_for_prs() {
   local elapsed=0
   local -a pending=("${CREATED_PRS[@]}")
   local -a still_pending
-  local pr state failed ready auto
+  local pr state check_states merge_state auto
+  local unmerged=0
 
   log "Waiting for ${#pending[@]} PR(s) to merge (poll=${poll_interval}s, timeout=${poll_timeout}s)..."
 
@@ -455,36 +558,67 @@ wait_for_prs() {
           ;;
         CLOSED)
           record_failure "${pr}" "PR closed without merging"
-          return 1
+          unmerged=$((unmerged + 1))
           ;;
         OPEN)
-          # any() over empty array returns false (correct), so this avoids Bug 1.
-          failed=$(gh pr checks "${pr}" --json state \
-            --jq 'any(.state == "FAILURE" or .state == "ERROR" or .state == "CANCELLED" or .state == "TIMED_OUT" or .state == "STARTUP_FAILURE" or .state == "ACTION_REQUIRED")' \
-            2>/dev/null || echo "false")
-          if [[ "${failed}" == "true" ]]; then
+          check_states=$(gh pr checks "${pr}" --json state --jq '.[].state' 2>/dev/null || true)
+
+          # No checks registered yet - wait for them rather than merging blind.
+          if [[ -z "${check_states}" ]]; then
+            still_pending+=("${pr}")
+            continue
+          fi
+
+          if grep -qE '^(FAILURE|ERROR|CANCELLED|TIMED_OUT|STARTUP_FAILURE|ACTION_REQUIRED)$' <<< "${check_states}"; then
             record_failure "${pr}" "Has failed checks"
-            return 1
+            unmerged=$((unmerged + 1))
+            continue
           fi
-          # ready: nothing pending and no failures. all() is vacuously true on empty,
-          # which is the "clean status" case GitHub uses to refuse auto-merge.
-          ready=$(gh pr checks "${pr}" --json state \
-            --jq 'all(.state == "SUCCESS" or .state == "NEUTRAL" or .state == "SKIPPED")' \
-            2>/dev/null || echo "false")
-          if [[ "${ready}" == "true" ]]; then
-            auto=$(gh pr view "${pr}" --json autoMergeRequest --jq '.autoMergeRequest != null' 2>/dev/null || echo "false")
-            if [[ "${auto}" != "true" ]]; then
-              log "Checks clean, auto-merge not enabled - merging ${pr}"
-              if gh pr merge "${pr}" --merge --delete-branch 2>/dev/null; then
-                log "Merged: ${pr}"
-                continue
-              else
-                record_failure "${pr}" "Direct merge failed"
-                return 1
-              fi
-            fi
+
+          # Any state that is not a pass is still running, so keep waiting.
+          if grep -qvE '^(SUCCESS|NEUTRAL|SKIPPED)$' <<< "${check_states}"; then
+            still_pending+=("${pr}")
+            continue
           fi
-          still_pending+=("${pr}")
+
+          # Every check we can see has passed, but gh pr checks lists what exists
+          # on the head commit, not what the branch rules REQUIRE - a required
+          # context that has not been created yet looks like an all-pass. GitHub
+          # knows the difference, so take its verdict: only CLEAN is mergeable.
+          merge_state=$(gh pr view "${pr}" --json mergeStateStatus --jq '.mergeStateStatus' 2>/dev/null || echo "UNKNOWN")
+          case "${merge_state}" in
+            CLEAN)
+              ;;
+            BLOCKED|UNKNOWN)
+              # Required contexts still outstanding, or GitHub still computing.
+              # Neither resolves by merging, so wait: POLL_TIMEOUT reports it.
+              still_pending+=("${pr}")
+              continue
+              ;;
+            *)
+              # BEHIND, DIRTY, DRAFT, UNSTABLE and anything new: none are ours to
+              # fix here (this script does not rebase), so name the state and move on.
+              record_failure "${pr}" "Not merging - merge state ${merge_state}"
+              unmerged=$((unmerged + 1))
+              continue
+              ;;
+          esac
+
+          # Auto-merge, if the branch rules enabled it, will land this on its
+          # own; otherwise merge it here.
+          auto=$(gh pr view "${pr}" --json autoMergeRequest --jq '.autoMergeRequest != null' 2>/dev/null || echo "false")
+          if [[ "${auto}" == "true" ]]; then
+            still_pending+=("${pr}")
+            continue
+          fi
+
+          log "All checks passed - merging ${pr}"
+          if gh pr merge "${pr}" --merge --delete-branch 2>/dev/null; then
+            log "Merged: ${pr}"
+          else
+            record_failure "${pr}" "Direct merge failed"
+            unmerged=$((unmerged + 1))
+          fi
           ;;
         *)
           # UNKNOWN or transient — keep polling
@@ -506,6 +640,11 @@ wait_for_prs() {
     fi
   done
 
+  if [[ "${unmerged}" -gt 0 ]]; then
+    log "Polling done - ${unmerged} PR(s) did not merge, see failures below."
+    return 1
+  fi
+
   log "All PRs merged."
   return 0
 }
@@ -518,6 +657,13 @@ main() {
     exit 1
   fi
 
+  # A MAIN_KUBECTL_VERSION outside the list would silently treat main as a
+  # main-1.3X branch and push the newest version nowhere.
+  if [[ " ${KUBECTL_VERSIONS[*]} " != *" ${MAIN_KUBECTL_VERSION} "* ]]; then
+    echo "ERROR: MAIN_KUBECTL_VERSION ${MAIN_KUBECTL_VERSION} is not in KUBECTL_VERSIONS" >&2
+    exit 1
+  fi
+
   # Resolve target versions from remote repos
   LATEST_BUILDON_VERSION=$(get_latest_remote_tag "buildon-github-actions")
   if [[ -z "$LATEST_BUILDON_VERSION" ]]; then
@@ -525,6 +671,13 @@ main() {
     exit 1
   fi
   log "Latest buildon-github-actions: $LATEST_BUILDON_VERSION"
+
+  LATEST_SCHEMA_VERSION=$(get_schema_version_for_buildon_tag "$LATEST_BUILDON_VERSION")
+  if [[ -z "$LATEST_SCHEMA_VERSION" ]]; then
+    warn "Could not resolve schema version for $LATEST_BUILDON_VERSION - leaving apiVersion alone"
+  else
+    log "Schema version shipped by $LATEST_BUILDON_VERSION: $LATEST_SCHEMA_VERSION"
+  fi
 
   if [[ -z "$NEW_VERSION" ]]; then
     NEW_VERSION=$(get_latest_remote_tag "kaptain-deploy-scripts")
@@ -541,10 +694,8 @@ main() {
     process_repo "$repo" || true
   done
 
-  if [[ ${#CREATED_PRS[@]} -eq 0 ]]; then
-    log "No PRs created this run - scanning for existing open upgrade PRs..."
-    discover_existing_prs
-  fi
+  log "Scanning for open upgrade PRs this run did not create..."
+  discover_existing_prs
 
   echo ""
   log "Upgrade complete!"
