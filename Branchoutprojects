@@ -11,7 +11,6 @@ image-environment-deploy-alpine-3-23
 image-environment-deploy-trixie-slim
 image-environment-deploy-ubi-9-minimal
 image-environment-deploy-ubuntu-24-04-lts
-kaptain-build-scripts
 kaptain-deploy-scripts
 kaptain-marketplace
 kaptain-shared-scripts
@@ -29,13 +28,14 @@ layerset-aws-eks-cluster-management
 layerset-image-environment-base
 layerset-image-environment-deploy
 layerset-kaptain-scripts-build
-show-sausage-making
 spec-build-scripts-api
 spec-kaptainpm-schema
 spec-manifests-contract-schema
 spec-manifests-env-report-schema
 spec-scripts-api-schema
 vendor-aws-load-balancer-controller
+vendor-aws-load-balancer-controller-global
+vendor-cluster-autoscaler-aws
 vendor-envoy-gateway
 vendor-envoy-gateway-global
 vendor-envoy-gateway-proxy
@@ -45,3 +45,4 @@ vendor-external-dns-aws-upsert-private
 vendor-external-dns-aws-upsert-public
 vendor-external-dns-global
 vendor-kubernetes-sigs-gateway-api
+vendor-metrics-server
