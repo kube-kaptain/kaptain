@@ -1,8 +1,6 @@
 name: Basic QC
 
 on:
-  push:
-    branches: [main]
   pull_request:
     branches: [main]
 
@@ -10,6 +8,5 @@ jobs:
   basic-quality:
     uses: kube-kaptain/buildon-github-actions/.github/workflows/basic-quality-checks.yaml@1.1.54
     permissions:
-      contents: write
-      packages: write
+      contents: read
       checks: write
