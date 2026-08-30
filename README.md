@@ -1,6 +1,7 @@
 # Kaptain
 
-A Kubernetes deployment system unlike anything you've seen before.
+A general purpose low-boiletplate portable build system and Kubernetes
+deployment system unlike anything you've seen before.
 
 
 # Branchout repo management
