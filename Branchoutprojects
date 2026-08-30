@@ -24,13 +24,11 @@ layer-gh-release-how-to-use-short-first
 layer-github-flow-strict
 layer-image-environment-base
 layer-image-environment-deploy
-layer-kaptain-scripts-build
 layerset-and-layer-build
 layerset-aws-eks-cluster-management
 layerset-cluster-use-project
 layerset-image-environment-base
 layerset-image-environment-deploy
-layerset-kaptain-scripts-build
 spec-build-scripts-api
 spec-kaptainpm-schema
 spec-manifests-contract-schema
